@@ -16,8 +16,8 @@ A Python application that can SSH into a Ruckus access point and reboot it using
 
 1. **Clone or download this repository**
    ```bash
-   git clone <repository-url>
-   cd apreboot
+   git clone https://github.com/alekm/ruckus-reboot.git
+   cd ruckus-reboot
    ```
 
 2. **Install dependencies**
