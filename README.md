@@ -117,11 +117,10 @@ For batch processing, create a CSV file with one IP address per line:
 
 ## Environment Variables
 
-You can configure the tool using environment variables by creating a `.env` file:
+You can configure the tool using environment variables by creating a `.env` file. Note that the host IP address is always provided via command line arguments (`--host` or `--csv-file`), not through environment variables:
 
 ```bash
-# Required
-RUCKUS_HOST=192.168.1.1
+# Required (if not provided via command line)
 RUCKUS_USERNAME=admin
 RUCKUS_PASSWORD=your_password_here
 
@@ -129,6 +128,8 @@ RUCKUS_PASSWORD=your_password_here
 RUCKUS_PORT=22
 RUCKUS_TIMEOUT=30
 RUCKUS_REBOOT_TIMEOUT=60
+
+# Note: RUCKUS_HOST is provided via --host or --csv-file command line arguments
 ```
 
 ## How It Works
