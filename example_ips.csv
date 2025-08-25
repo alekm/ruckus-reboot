@@ -1,0 +1,9 @@
+# Example CSV file with Ruckus Access Point IP addresses
+# Lines starting with # are comments and will be ignored
+# Each IP address should be on its own line
+# Replace with your actual AP IP addresses
+
+192.168.1.1
+192.168.1.2
+10.0.0.1
+172.16.1.1
