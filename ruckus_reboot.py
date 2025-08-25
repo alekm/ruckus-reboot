@@ -12,6 +12,7 @@ import sys
 import time
 import logging
 import csv
+import ipaddress
 from typing import Optional, Tuple, List, Dict
 import pexpect
 from dotenv import load_dotenv
@@ -267,20 +268,38 @@ def read_csv_file(csv_file: str) -> List[str]:
         csv_file: Path to the CSV file
         
     Returns:
-        List[str]: List of IP addresses
+        List[str]: List of valid IP addresses
     """
     ip_addresses = []
+    invalid_ips = []
     
     try:
         with open(csv_file, 'r', newline='') as file:
             reader = csv.reader(file)
-            for row in reader:
+            for row_num, row in enumerate(reader, 1):
                 if row:  # Skip empty rows
                     ip = row[0].strip()
                     if ip and not ip.startswith('#'):  # Skip comments
-                        ip_addresses.append(ip)
+                        # Validate IP address
+                        try:
+                            ipaddress.ip_address(ip)
+                            ip_addresses.append(ip)
+                        except ValueError:
+                            invalid_ips.append((row_num, ip))
         
-        console.print(f"[green]Loaded {len(ip_addresses)} IP addresses from {csv_file}[/green]")
+        # Report invalid IP addresses
+        if invalid_ips:
+            console.print(f"[red]Warning: Found {len(invalid_ips)} invalid IP addresses in {csv_file}:[/red]")
+            for row_num, ip in invalid_ips:
+                console.print(f"[red]  Row {row_num}: '{ip}' is not a valid IP address[/red]")
+            
+            if not ip_addresses:
+                console.print(f"[red]Error: No valid IP addresses found in {csv_file}[/red]")
+                sys.exit(1)
+            else:
+                console.print(f"[yellow]Continuing with {len(ip_addresses)} valid IP addresses...[/yellow]")
+        
+        console.print(f"[green]Loaded {len(ip_addresses)} valid IP addresses from {csv_file}[/green]")
         return ip_addresses
         
     except FileNotFoundError:
