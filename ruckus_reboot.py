@@ -29,9 +29,9 @@ load_dotenv()
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format="%(message)s",
+    format="%(asctime)s %(levelname)-8s %(message)s",
     datefmt="[%X]",
-    handlers=[RichHandler(rich_tracebacks=True)]
+    handlers=[RichHandler(rich_tracebacks=False, show_path=False)]
 )
 
 logger = logging.getLogger("ruckus_reboot")
