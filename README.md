@@ -76,12 +76,6 @@ python ruckus_reboot.py --host 192.168.1.1 --username admin --port 2222
 
 # Enable verbose logging
 python ruckus_reboot.py --host 192.168.1.1 --username admin --verbose
-
-# Test connectivity without rebooting (single device)
-python ruckus_reboot.py --host 192.168.1.1 --username admin --info --no-reboot
-
-# Test connectivity for multiple devices
-python ruckus_reboot.py --csv-file example_ips.csv --username admin --info --no-reboot
 ```
 
 ### Command Line Options
