@@ -15,7 +15,7 @@ import csv
 import ipaddress
 from typing import Optional, Tuple, List, Dict
 import pexpect
-from dotenv import load_dotenv
+
 import click
 from rich.console import Console
 from rich.logging import RichHandler
@@ -23,8 +23,7 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
-# Load environment variables
-load_dotenv()
+
 
 # Configure logging
 logging.basicConfig(

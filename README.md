@@ -29,7 +29,7 @@ A Python application that can SSH into a Ruckus access point and reboot it using
 
 3. **Ready to use!**
    
-   The tool is now ready to use. You can provide credentials via command line arguments or environment variables (see Usage section).
+   The tool is now ready to use. You can provide credentials via command line arguments or interactive prompts.
 
 ## Usage
 
@@ -112,18 +112,7 @@ For batch processing, create a CSV file with one IP address per line:
 172.16.1.2
 ```
 
-## Environment Variables
 
-The tool loads environment variables from a `.env` file if present, but currently only uses them for internal configuration. Username and password should be provided via command line arguments or interactive prompts.
-
-```bash
-# Optional environment variables (for future use)
-RUCKUS_PORT=22
-RUCKUS_TIMEOUT=30
-RUCKUS_REBOOT_TIMEOUT=60
-
-# Note: Username and password are provided via command line or interactive prompts
-```
 
 ## How It Works
 
@@ -236,7 +225,7 @@ The following Python packages are required (see `requirements.txt`):
 
 - `pexpect`: Interactive command execution
 - `paramiko`: SSH protocol implementation (backup)
-- `python-dotenv`: Environment variable management
+
 - `click`: Command line interface
 - `rich`: Rich terminal output
 
