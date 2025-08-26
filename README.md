@@ -214,6 +214,24 @@ python ruckus_reboot.py --host 192.168.1.1 --username admin --info --no-reboot
 python ruckus_reboot.py --csv-file example_ips.csv --username admin --info --no-reboot --verbose
 ```
 
+#### Sample System Information Table
+
+When using `--info` with batch processing, the tool displays a clean table with system information:
+
+```
+                                         System Information Results                                          
+┏━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┓
+┃ Host           ┃ Version                                              ┃ Uptime                  ┃ Status  ┃
+┡━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━┩
+│ 172.16.250.121 │ Ruckus R350 Multimedia Hotzone Wireless AP -         │ 4 hrs 27 mins 43 secs   │ Success │
+│                │ 7.1.1.520.830                                        │                         │         │
+│ 172.16.250.122 │ Ruckus R670 Multimedia Hotzone Wireless AP -         │ 1 hr 51 mins 1 sec      │ Success │
+│                │ 7.1.1.520.830                                        │                         │         │
+│ 172.16.250.123 │ Ruckus R670 Multimedia Hotzone Wireless AP -         │ 13 days 37 mins 56 secs │ Success │
+│                │ 7.1.1.520.830                                        │                         │         │
+└────────────────┴──────────────────────────────────────────────────────┴─────────────────────────┴─────────┘
+```
+
 ## Security Considerations
 
 - **Password Security**: Passwords are not logged and are hidden during input
