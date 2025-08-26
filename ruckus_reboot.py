@@ -65,62 +65,55 @@ class RuckusRebootTool:
             bool: True if connection successful, False otherwise
         """
         try:
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                console=console
-            ) as progress:
-                task = progress.add_task(f"Connecting to {self.host}...", total=None)
-                
-                # Construct SSH command
-                ssh_cmd = f"ssh -p {self.port} {self.username}@{self.host}"
-                
-                # Start pexpect process
-                self.child = pexpect.spawn(ssh_cmd, timeout=30)
-                
-                # Handle different SSH prompts
-                i = self.child.expect([
-                    'Please login:',
-                    'password:',
-                    'Password:',
-                    'Are you sure you want to continue connecting',
-                    pexpect.EOF,
-                    pexpect.TIMEOUT
-                ])
-                
-                logger.debug(f"SSH prompt detected: index {i}")
-                
-                if i == 0:  # Ruckus login prompt
+            # Construct SSH command
+            ssh_cmd = f"ssh -p {self.port} {self.username}@{self.host}"
+            
+            # Start pexpect process
+            self.child = pexpect.spawn(ssh_cmd, timeout=30)
+            
+            # Handle different SSH prompts
+            i = self.child.expect([
+                'Please login:',
+                'password:',
+                'Password:',
+                'Are you sure you want to continue connecting',
+                pexpect.EOF,
+                pexpect.TIMEOUT
+            ])
+            
+            logger.debug(f"SSH prompt detected: index {i}")
+            
+            if i == 0:  # Ruckus login prompt
+                self.child.sendline(self.username)
+                self.child.expect(['password :'])
+                self.child.sendline(self.password)
+            elif i == 1 or i == 2:  # Standard password prompt
+                self.child.sendline(self.password)
+            elif i == 3:  # SSH key verification
+                self.child.sendline('yes')
+                self.child.expect(['password:', 'Password:', 'Please login:'])
+                if self.child.after == b'Please login:':
                     self.child.sendline(self.username)
                     self.child.expect(['password :'])
                     self.child.sendline(self.password)
-                elif i == 1 or i == 2:  # Standard password prompt
+                else:
                     self.child.sendline(self.password)
-                elif i == 3:  # SSH key verification
-                    self.child.sendline('yes')
-                    self.child.expect(['password:', 'Password:', 'Please login:'])
-                    if self.child.after == b'Please login:':
-                        self.child.sendline(self.username)
-                        self.child.expect(['password :'])
-                        self.child.sendline(self.password)
-                    else:
-                        self.child.sendline(self.password)
-                elif i == 4:  # EOF
-                    logger.error(f"SSH connection failed to {self.host} - EOF received")
-                    return False
-                elif i == 5:  # Timeout
-                    logger.error(f"SSH connection to {self.host} timed out")
-                    return False
-                
-                # Wait for Ruckus CLI prompt
-                try:
-                    self.child.expect('rkscli:', timeout=10)
-                    logger.info(f"Successfully connected to {self.host} (Ruckus CLI)")
-                    return True
-                        
-                except pexpect.TIMEOUT:
-                    logger.error(f"Timeout waiting for Ruckus CLI prompt from {self.host}")
-                    return False
+            elif i == 4:  # EOF
+                logger.error(f"SSH connection failed to {self.host} - EOF received")
+                return False
+            elif i == 5:  # Timeout
+                logger.error(f"SSH connection to {self.host} timed out")
+                return False
+            
+            # Wait for Ruckus CLI prompt
+            try:
+                self.child.expect('rkscli:', timeout=10)
+                logger.info(f"Successfully connected to {self.host} (Ruckus CLI)")
+                return True
+                    
+            except pexpect.TIMEOUT:
+                logger.error(f"Timeout waiting for Ruckus CLI prompt from {self.host}")
+                return False
                     
         except Exception as e:
             logger.error(f"Connection error to {self.host}: {str(e)}")
@@ -416,7 +409,7 @@ def process_batch_devices(ip_addresses: List[str], username: str, password: str,
     return results
 
 
-def display_results(results: List[Dict[str, str]], verbose: bool = False, info_mode: bool = False):
+def display_results(results: List[Dict[str, str]], verbose: bool = False, info_mode: bool = False, no_reboot: bool = False):
     """Display results in a formatted table."""
     if info_mode:
         # Always show system information table when --info is used
@@ -428,8 +421,15 @@ def display_results(results: List[Dict[str, str]], verbose: bool = False, info_m
         
         for result in results:
             status_style = "green" if result['status'] == 'Success' else "red"
-            version = result.get('version', 'N/A')
-            uptime = result.get('uptime', 'N/A')
+            
+            if result['status'] == 'Success':
+                version = result.get('version', 'N/A')
+                uptime = result.get('uptime', 'N/A')
+            else:
+                # For failed connections, show a cleaner message
+                version = "—"
+                uptime = "—"
+            
             table.add_row(
                 result['host'],
                 version,
@@ -459,12 +459,14 @@ def display_results(results: List[Dict[str, str]], verbose: bool = False, info_m
     success_count = sum(1 for r in results if r['status'] == 'Success')
     total_count = len(results)
     
-    if info_mode:
+    if info_mode and no_reboot:
+        # Only info mode (no reboot)
         if verbose:
             console.print(f"\n[bold]Summary:[/bold] {success_count}/{total_count} devices queried successfully")
         else:
             console.print(f"\n{success_count}/{total_count} devices queried successfully")
     else:
+        # Reboot mode (with or without info)
         if verbose:
             console.print(f"\n[bold]Summary:[/bold] {success_count}/{total_count} devices rebooted successfully")
         else:
@@ -487,7 +489,7 @@ def main(host, csv_file, username, password, port, no_confirm, info, no_reboot, 
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     else:
-        logging.getLogger().setLevel(logging.WARNING)
+        logging.getLogger().setLevel(logging.ERROR)  # Only show errors, not warnings or info
     
     # Validate input parameters
     if not host and not csv_file:
@@ -518,7 +520,7 @@ def main(host, csv_file, username, password, port, no_confirm, info, no_reboot, 
                 ))
             
             result = process_single_device(host, username, password, port, no_confirm, info, no_reboot, verbose)
-            display_results([result], verbose, info_mode=info)
+            display_results([result], verbose, info_mode=info, no_reboot=no_reboot)
             
         else:
             # Batch mode
@@ -554,7 +556,7 @@ def main(host, csv_file, username, password, port, no_confirm, info, no_reboot, 
                     sys.exit(0)
             
             results = process_batch_devices(ip_addresses, username, password, port, no_confirm, info, no_reboot, verbose)
-            display_results(results, verbose, info_mode=info)
+            display_results(results, verbose, info_mode=info, no_reboot=no_reboot)
             
     except KeyboardInterrupt:
         console.print("\n[yellow]Operation cancelled by user[/yellow]")
