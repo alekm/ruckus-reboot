@@ -8,7 +8,6 @@ A Python application that can SSH into a Ruckus access point and reboot it using
 - 🔄 Automated reboot functionality with confirmation
 - 📊 System information gathering (version, uptime)
 - 🎨 Beautiful CLI interface with progress indicators and tables
-- ⚙️ Configurable via environment variables
 - 🛡️ Error handling and timeout management
 - 🔒 Password prompt for secure credential input
 - 📋 Batch processing from CSV files
@@ -28,15 +27,9 @@ A Python application that can SSH into a Ruckus access point and reboot it using
    pip install -r requirements.txt
    ```
 
-3. **Configure your access point credentials**
+3. **Ready to use!**
    
-       Option A: Use environment variables
-    ```bash
-    cp env.example .env
-    # Edit .env with your actual credentials
-    ```
-   
-   Option B: Provide credentials via command line (see Usage section)
+   The tool is now ready to use. You can provide credentials via command line arguments or environment variables (see Usage section).
 
 ## Usage
 
@@ -130,11 +123,9 @@ For batch processing, create a CSV file with one IP address per line:
 You can configure the tool using environment variables by creating a `.env` file. Note that the host IP address is always provided via command line arguments (`--host` or `--csv-file`), not through environment variables:
 
 ```bash
-# Required (if not provided via command line)
+# Optional environment variables
 RUCKUS_USERNAME=admin
 RUCKUS_PASSWORD=your_password_here
-
-# Optional
 RUCKUS_PORT=22
 RUCKUS_TIMEOUT=30
 RUCKUS_REBOOT_TIMEOUT=60
@@ -249,11 +240,32 @@ When using `--info` with batch processing, the tool displays a clean table with 
 
 ## Dependencies
 
+The following Python packages are required (see `requirements.txt`):
+
 - `pexpect`: Interactive command execution
 - `paramiko`: SSH protocol implementation (backup)
 - `python-dotenv`: Environment variable management
 - `click`: Command line interface
 - `rich`: Rich terminal output
+
+Install with: `pip install -r requirements.txt`
+
+## Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/alekm/ruckus-reboot.git
+cd ruckus-reboot
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Reboot a single access point
+python ruckus_reboot.py --host 192.168.1.1 --username admin
+
+# Reboot multiple access points from CSV
+python ruckus_reboot.py --csv-file example_ips.csv --username admin
+```
 
 ## License
 
