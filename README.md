@@ -6,11 +6,14 @@ A Python application that can SSH into a Ruckus access point and reboot it using
 
 - 🔐 Secure SSH connection to Ruckus access points
 - 🔄 Automated reboot functionality with confirmation
-- 📊 System information gathering
-- 🎨 Beautiful CLI interface with progress indicators
+- 📊 System information gathering (version, uptime)
+- 🎨 Beautiful CLI interface with progress indicators and tables
 - ⚙️ Configurable via environment variables
 - 🛡️ Error handling and timeout management
 - 🔒 Password prompt for secure credential input
+- 📋 Batch processing from CSV files
+- 📋 Information-only mode (no reboot)
+- 📊 Clean table output for batch operations
 
 ## Installation
 
@@ -61,6 +64,9 @@ python ruckus_reboot.py --csv-file example_ips.csv --username admin --no-confirm
 
 # Show system information for each device
 python ruckus_reboot.py --csv-file example_ips.csv --username admin --info
+
+# Show system information without rebooting (information-only mode)
+python ruckus_reboot.py --csv-file example_ips.csv --username admin --info --no-reboot
 ```
 
 ### Advanced Usage
@@ -68,6 +74,9 @@ python ruckus_reboot.py --csv-file example_ips.csv --username admin --info
 ```bash
 # Show system information before reboot
 python ruckus_reboot.py --host 192.168.1.1 --username admin --info
+
+# Show system information without rebooting (information-only mode)
+python ruckus_reboot.py --host 192.168.1.1 --username admin --info --no-reboot
 
 # Use custom SSH port
 python ruckus_reboot.py --host 192.168.1.1 --username admin --port 2222
@@ -93,6 +102,7 @@ python test_connection.py --csv-file example_ips.csv --username admin
 | `--port` | | SSH port (default: 22) | No |
 | `--no-confirm` | | Skip reboot confirmation | No |
 | `--info` | | Show system information before reboot | No |
+| `--no-reboot` | | Information-only mode (no reboot) | No |
 | `--verbose` | `-v` | Enable verbose logging | No |
 
 *Either `--host` or `--csv-file` must be specified
@@ -137,18 +147,24 @@ RUCKUS_REBOOT_TIMEOUT=60
 ### Single Device Mode
 1. **Connection**: The tool establishes an SSH connection using `pexpect` to handle interactive prompts
 2. **Authentication**: Handles Ruckus-specific login flow (`Please login:` → `password :`) and standard SSH authentication
-3. **Privilege Escalation**: Attempts to enter privileged mode if needed for reboot commands
-4. **Reboot Execution**: Tries multiple reboot commands until one succeeds
+3. **System Information** (if `--info`): Retrieves version and uptime information
+4. **Reboot Execution** (unless `--no-reboot`): Executes the `reboot` command on the Ruckus CLI
 5. **Cleanup**: Properly disconnects from the access point
 
 ### Batch Processing Mode
 1. **CSV Parsing**: Reads IP addresses from the specified CSV file
-2. **Progress Tracking**: Shows progress bar and status for each device
+2. **Progress Tracking**: Shows progress indicators and status for each device
 3. **Sequential Processing**: Processes devices one by one with delays to avoid network overload
 4. **Result Collection**: Collects results from all devices
 5. **Summary Report**: Displays formatted table with results and summary statistics
 
-## Supported Reboot Commands
+## System Information Commands
+
+The tool uses standard Ruckus commands to gather system information:
+- `get version` - Retrieves model and firmware version
+- `get uptime` - Retrieves system uptime
+
+## Reboot Command
 
 The tool uses the standard Ruckus reboot command:
 - `reboot`
@@ -170,13 +186,13 @@ The tool uses the standard Ruckus reboot command:
    - Some Ruckus models require specific user roles
 
 3. **Reboot Command Not Found**
-   - The tool tries multiple reboot commands automatically
-   - Check if the user has sufficient privileges
+   - Verify the user has sufficient privileges to execute the `reboot` command
+   - Check if the Ruckus CLI is accessible
    - Some models may require different commands
 
 4. **Permission Denied**
    - Ensure the user has administrative privileges
-   - Try using the `enable` command to elevate privileges
+   - Verify the user has reboot permissions on the Ruckus access point
 
 ### Debug Mode
 
@@ -186,18 +202,32 @@ Enable verbose logging to see detailed information:
 python ruckus_reboot.py --host 192.168.1.1 --username admin --verbose
 ```
 
+### Information-Only Mode
+
+Get system information without rebooting:
+
+```bash
+# Single device
+python ruckus_reboot.py --host 192.168.1.1 --username admin --info --no-reboot
+
+# Multiple devices with table output
+python ruckus_reboot.py --csv-file example_ips.csv --username admin --info --no-reboot --verbose
+```
+
 ## Security Considerations
 
 - **Password Security**: Passwords are not logged and are hidden during input
-- **SSH Keys**: The tool handles SSH key verification automatically
+- **SSH Key Verification**: The tool handles SSH key verification prompts automatically
 - **Connection Cleanup**: Proper disconnection ensures no lingering sessions
 - **Confirmation**: Reboot requires user confirmation by default
+- **Information-Only Mode**: Use `--no-reboot` for safe system information gathering
 
 ## Requirements
 
 - Python 3.7+
 - SSH access to the Ruckus access point
 - Valid credentials with reboot privileges
+- Network connectivity to the access points
 
 ## Dependencies
 

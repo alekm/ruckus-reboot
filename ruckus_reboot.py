@@ -231,17 +231,33 @@ class RuckusRebootTool:
         info = {}
         
         commands = {
-            "hostname": "hostname",
-            "uptime": "uptime",
-            "version": "cat /version 2>/dev/null || uname -a || show version",
-            "model": "cat /proc/version 2>/dev/null || show system || echo 'Unknown'",
-            "memory": "free -h 2>/dev/null || show memory || echo 'Memory info not available'"
+            "version": "get version",
+            "uptime": "get uptime"
         }
         
         for key, cmd in commands.items():
             success, output = self.execute_command(cmd)
             if success:
-                info[key] = output.strip()
+                # Clean up the output
+                if key == "version":
+                    # Remove "get version" command from the output first
+                    clean_output = output.replace('get version', '').strip()
+                    lines = clean_output.split('\n')
+                    if len(lines) >= 2:
+                        model = lines[0].strip()
+                        version = lines[1].replace('Version:', '').strip()
+                        info[key] = f"{model} - {version}"
+                    else:
+                        info[key] = clean_output
+                elif key == "uptime":
+                    # Extract just the uptime info
+                    if 'Uptime:' in output:
+                        uptime = output.split('Uptime:')[1].split('OK')[0].strip()
+                        info[key] = uptime
+                    else:
+                        info[key] = output.strip()
+                else:
+                    info[key] = output.strip()
             else:
                 info[key] = "Not available"
         
@@ -311,7 +327,7 @@ def read_csv_file(csv_file: str) -> List[str]:
 
 
 def process_single_device(host: str, username: str, password: str, port: int, 
-                         no_confirm: bool, info: bool, verbose: bool = False) -> Dict[str, str]:
+                         no_confirm: bool, info: bool, no_reboot: bool = False, verbose: bool = False) -> Dict[str, str]:
     """
     Process a single device.
     
@@ -331,20 +347,22 @@ def process_single_device(host: str, username: str, password: str, port: int,
             result['message'] = 'Connection failed'
             return result
         
-        # Show system information if requested
-        if info and verbose:
-            console.print(f"\n[bold blue]System Information for {host}:[/bold blue]")
+        # Get system information if requested
+        if info:
             sys_info = tool.get_system_info()
-            for key, value in sys_info.items():
-                console.print(f"  [bold]{key.title()}:[/bold] {value}")
-            console.print()
+            # Add system info to result for table display
+            result.update(sys_info)
         
-        # Perform reboot
-        if tool.reboot(confirm=not no_confirm):
+        # Perform reboot (unless --no-reboot is specified)
+        if no_reboot:
             result['status'] = 'Success'
-            result['message'] = 'Reboot initiated successfully'
+            result['message'] = 'System information retrieved successfully (no reboot performed)'
         else:
-            result['message'] = 'Failed to initiate reboot'
+            if tool.reboot(confirm=not no_confirm):
+                result['status'] = 'Success'
+                result['message'] = 'Reboot initiated successfully'
+            else:
+                result['message'] = 'Failed to initiate reboot'
             
     except Exception as e:
         result['message'] = f'Error: {str(e)}'
@@ -355,7 +373,7 @@ def process_single_device(host: str, username: str, password: str, port: int,
 
 
 def process_batch_devices(ip_addresses: List[str], username: str, password: str, 
-                         port: int, no_confirm: bool, info: bool, verbose: bool = False) -> List[Dict[str, str]]:
+                         port: int, no_confirm: bool, info: bool, no_reboot: bool = False, verbose: bool = False) -> List[Dict[str, str]]:
     """
     Process multiple devices in batch.
     
@@ -370,7 +388,7 @@ def process_batch_devices(ip_addresses: List[str], username: str, password: str,
         for i, host in enumerate(ip_addresses):
             console.print(f"\n[bold]Processing {host} ({i+1}/{len(ip_addresses)})...[/bold]")
             
-            result = process_single_device(host, username, password, port, no_confirm, info, verbose)
+            result = process_single_device(host, username, password, port, no_confirm, info, no_reboot, verbose)
             results.append(result)
             
             # Add delay between devices to avoid overwhelming the network
@@ -379,15 +397,17 @@ def process_batch_devices(ip_addresses: List[str], username: str, password: str,
     else:
         # Simple output mode
         for i, host in enumerate(ip_addresses):
-            console.print(f"Rebooting {host}...", end="")
+            if not info:  # Only show reboot progress if not getting system info
+                console.print(f"Rebooting {host}...", end="")
             
-            result = process_single_device(host, username, password, port, no_confirm, info, verbose)
+            result = process_single_device(host, username, password, port, no_confirm, info, no_reboot, verbose)
             results.append(result)
             
-            if result['status'] == 'Success':
-                console.print("OK!")
-            else:
-                console.print(f"FAILED: {result['message']}")
+            if not info:  # Only show status if not getting system info
+                if result['status'] == 'Success':
+                    console.print("OK!")
+                else:
+                    console.print(f"FAILED: {result['message']}")
             
             # Add delay between devices to avoid overwhelming the network
             if i < len(ip_addresses) - 1:
@@ -396,9 +416,30 @@ def process_batch_devices(ip_addresses: List[str], username: str, password: str,
     return results
 
 
-def display_results(results: List[Dict[str, str]], verbose: bool = False):
+def display_results(results: List[Dict[str, str]], verbose: bool = False, info_mode: bool = False):
     """Display results in a formatted table."""
-    if verbose:
+    if info_mode:
+        # Always show system information table when --info is used
+        table = Table(title="System Information Results")
+        table.add_column("Host", style="cyan")
+        table.add_column("Version", style="blue")
+        table.add_column("Uptime", style="green")
+        table.add_column("Status", style="yellow")
+        
+        for result in results:
+            status_style = "green" if result['status'] == 'Success' else "red"
+            version = result.get('version', 'N/A')
+            uptime = result.get('uptime', 'N/A')
+            table.add_row(
+                result['host'],
+                version,
+                uptime,
+                f"[{status_style}]{result['status']}[/{status_style}]"
+            )
+        
+        console.print(table)
+    elif verbose:
+        # Reboot results table (only in verbose mode)
         table = Table(title="Reboot Results")
         table.add_column("Host", style="cyan")
         table.add_column("Status", style="green")
@@ -418,10 +459,16 @@ def display_results(results: List[Dict[str, str]], verbose: bool = False):
     success_count = sum(1 for r in results if r['status'] == 'Success')
     total_count = len(results)
     
-    if verbose:
-        console.print(f"\n[bold]Summary:[/bold] {success_count}/{total_count} devices rebooted successfully")
+    if info_mode:
+        if verbose:
+            console.print(f"\n[bold]Summary:[/bold] {success_count}/{total_count} devices queried successfully")
+        else:
+            console.print(f"\n{success_count}/{total_count} devices queried successfully")
     else:
-        console.print(f"\n{success_count}/{total_count} devices rebooted successfully")
+        if verbose:
+            console.print(f"\n[bold]Summary:[/bold] {success_count}/{total_count} devices rebooted successfully")
+        else:
+            console.print(f"\n{success_count}/{total_count} devices rebooted successfully")
 
 
 @click.command()
@@ -432,12 +479,15 @@ def display_results(results: List[Dict[str, str]], verbose: bool = False):
 @click.option('--port', default=22, help='SSH port (default: 22)')
 @click.option('--no-confirm', is_flag=True, help='Skip reboot confirmation')
 @click.option('--info', is_flag=True, help='Show system information before reboot')
+@click.option('--no-reboot', is_flag=True, help='Only show system information, do not reboot')
 @click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
-def main(host, csv_file, username, password, port, no_confirm, info, verbose):
+def main(host, csv_file, username, password, port, no_confirm, info, no_reboot, verbose):
     """Ruckus Access Point Reboot Tool - Single device or batch processing"""
     
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
+    else:
+        logging.getLogger().setLevel(logging.WARNING)
     
     # Validate input parameters
     if not host and not csv_file:
@@ -467,8 +517,8 @@ def main(host, csv_file, username, password, port, no_confirm, info, verbose):
                     border_style="blue"
                 ))
             
-            result = process_single_device(host, username, password, port, no_confirm, info, verbose)
-            display_results([result], verbose)
+            result = process_single_device(host, username, password, port, no_confirm, info, no_reboot, verbose)
+            display_results([result], verbose, info_mode=info)
             
         else:
             # Batch mode
@@ -487,8 +537,8 @@ def main(host, csv_file, username, password, port, no_confirm, info, verbose):
                 console.print("[red]No valid IP addresses found in CSV file[/red]")
                 sys.exit(1)
             
-            # Confirm batch operation
-            if not no_confirm:
+            # Confirm batch operation (only if actually rebooting)
+            if not no_confirm and not no_reboot:
                 if verbose:
                     console.print(Panel(
                         f"[red]WARNING: This will reboot {len(ip_addresses)} access points[/red]\n"
@@ -503,8 +553,8 @@ def main(host, csv_file, username, password, port, no_confirm, info, verbose):
                     console.print("[yellow]Batch operation cancelled by user[/yellow]")
                     sys.exit(0)
             
-            results = process_batch_devices(ip_addresses, username, password, port, no_confirm, info, verbose)
-            display_results(results, verbose)
+            results = process_batch_devices(ip_addresses, username, password, port, no_confirm, info, no_reboot, verbose)
+            display_results(results, verbose, info_mode=info)
             
     except KeyboardInterrupt:
         console.print("\n[yellow]Operation cancelled by user[/yellow]")
