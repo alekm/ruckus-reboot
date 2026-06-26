@@ -13,6 +13,7 @@ A Python application that can SSH into a Ruckus access point and reboot it using
 - 📋 Batch processing from CSV files
 - 📋 Information-only mode (no reboot)
 - 📊 Clean table output for batch operations
+- 🏭 Factory-default (`set factory`) + reboot for vSZ → RUCKUS One (R1) migrations
 
 ## Installation
 
@@ -78,6 +79,31 @@ python ruckus_reboot.py --host 192.168.1.1 --username admin --port 2222
 python ruckus_reboot.py --host 192.168.1.1 --username admin --verbose
 ```
 
+### Factory Reset (vSZ → RUCKUS One migration)
+
+For migrations off a SmartZone/vSZ controller onto RUCKUS One (R1), `--factory-reset`
+runs the Ruckus CLI `set factory` command and then reboots, so the AP comes back up at
+factory defaults ready to be onboarded into R1. This works for a single AP or a whole
+CSV in bulk.
+
+> ⚠️ **This erases all configuration and is irreversible.** It requires a double
+> confirmation (skip with `--no-confirm`). It cannot be combined with `--no-reboot`,
+> since factory defaults only take effect after a reboot.
+
+```bash
+# Factory-default + reboot a single AP
+python ruckus_reboot.py --host 192.168.1.1 --username admin --factory-reset
+
+# Capture version/uptime first (audit trail), then factory-default + reboot
+python ruckus_reboot.py --host 192.168.1.1 --username admin --factory-reset --info
+
+# Bulk factory-default + reboot from a CSV of targeted APs
+python ruckus_reboot.py --csv-file example_ips.csv --username admin --factory-reset
+
+# Unattended bulk reset (skips the double confirmation)
+python ruckus_reboot.py --csv-file example_ips.csv --username admin --factory-reset --no-confirm
+```
+
 ### Command Line Options
 
 | Option | Short | Description | Required |
@@ -90,6 +116,7 @@ python ruckus_reboot.py --host 192.168.1.1 --username admin --verbose
 | `--no-confirm` | | Skip reboot confirmation | No |
 | `--info` | | Show system information before reboot | No |
 | `--no-reboot` | | Information-only mode (no reboot) | No |
+| `--factory-reset` | | Factory-default the AP (`set factory`) then reboot — **erases all config** | No |
 | `--verbose` | `-v` | Enable verbose logging | No |
 
 *Either `--host` or `--csv-file` must be specified
@@ -140,6 +167,15 @@ The tool uses standard Ruckus commands to gather system information:
 
 The tool uses the standard Ruckus reboot command:
 - `reboot`
+
+## Factory Reset Commands
+
+With `--factory-reset`, the tool runs the standard Ruckus factory-default sequence:
+- `set factory` — marks the AP to reset to factory defaults on next boot
+- `reboot` — applies the reset
+
+After it reboots, the AP comes up at factory defaults (DHCP client, or `192.168.0.1`
+if no DHCP server is present), ready to be onboarded into RUCKUS One.
 
 **Note**: The tool is specifically optimized for Ruckus access points and handles their custom CLI prompt (`rkscli:`) and authentication flow.
 
@@ -210,6 +246,7 @@ When using `--info` with batch processing, the tool displays a clean table with 
 - **SSH Key Verification**: The tool handles SSH key verification prompts automatically
 - **Connection Cleanup**: Proper disconnection ensures no lingering sessions
 - **Confirmation**: Reboot requires user confirmation by default
+- **Factory Reset**: `--factory-reset` is irreversible (erases all config) and requires a double confirmation by default
 - **Information-Only Mode**: Use `--no-reboot` for safe system information gathering
 
 ## Requirements

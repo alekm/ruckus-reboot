@@ -135,24 +135,33 @@ class RuckusRebootTool:
         try:
             self.child.sendline(command)
             
-            # Wait for response (expect OK for reboot command)
+            # 'reboot' replies OK and the AP then closes the SSH session, so a
+            # matched OK or a dropped connection both mean it is rebooting.
             if command == "reboot":
+                i = self.child.expect(['OK', pexpect.EOF, pexpect.TIMEOUT], timeout=timeout)
+                if i in (0, 1):
+                    return True, "OK"
+                output = self.child.before.decode('utf-8', errors='ignore').strip()
+                return False, f"reboot did not start: {output}"
+
+            # 'set factory' replies "...OK" and then redraws the rkscli prompt.
+            # Match OK, then drain that trailing prompt so it can't bleed into
+            # the next command (the reboot that actually applies the reset).
+            if command == "set factory":
                 i = self.child.expect(['OK', 'rkscli:', pexpect.EOF, pexpect.TIMEOUT], timeout=timeout)
                 output = self.child.before.decode('utf-8', errors='ignore').strip()
-                
                 if i == 0:  # OK response
+                    self.child.expect(['rkscli:', pexpect.EOF, pexpect.TIMEOUT], timeout=5)
                     return True, "OK"
-                else:
-                    return False, f"Reboot command failed: {output}"
+                return False, f"'set factory' command failed: {output}"
+
+            # For other commands, wait for the CLI prompt to return
+            i = self.child.expect(['rkscli:', pexpect.EOF, pexpect.TIMEOUT], timeout=timeout)
+            output = self.child.before.decode('utf-8', errors='ignore').strip()
+            if i == 0:  # rkscli prompt
+                return True, output
             else:
-                # For other commands, wait for CLI prompt
-                i = self.child.expect(['rkscli:', pexpect.EOF, pexpect.TIMEOUT], timeout=timeout)
-                output = self.child.before.decode('utf-8', errors='ignore').strip()
-                
-                if i == 0:  # rkscli prompt
-                    return True, output
-                else:
-                    return False, f"Command failed: {output}"
+                return False, f"Command failed: {output}"
                 
         except Exception as e:
             return False, f"Command execution error: {str(e)}"
@@ -213,6 +222,36 @@ class RuckusRebootTool:
             logger.error(f"Reboot error on {self.host}: {str(e)}")
             return False
     
+    def factory_reset(self) -> bool:
+        """
+        Factory-default the Ruckus access point, then reboot to apply.
+
+        Runs the Ruckus CLI 'set factory' command (which only takes effect
+        after a reboot) and then reuses reboot() to apply it. This erases all
+        configuration and is irreversible. Confirmation is handled by the
+        caller (see confirm_factory_reset / main), not here.
+
+        Returns:
+            bool: True if 'set factory' succeeded and reboot was initiated
+        """
+        if not self.child:
+            logger.error(f"Not connected to {self.host}")
+            return False
+
+        try:
+            logger.info(f"Setting factory defaults on {self.host}...")
+            success, output = self.execute_command("set factory", timeout=60)
+            if not success:
+                logger.error(f"'set factory' failed on {self.host}: {output}")
+                return False
+
+            logger.info(f"Factory defaults set on {self.host}; rebooting to apply...")
+            return self.reboot(confirm=False)
+
+        except Exception as e:
+            logger.error(f"Factory reset error on {self.host}: {str(e)}")
+            return False
+
     def get_system_info(self) -> dict:
         """
         Get system information from the access point.
@@ -318,8 +357,44 @@ def read_csv_file(csv_file: str) -> List[str]:
         sys.exit(1)
 
 
-def process_single_device(host: str, username: str, password: str, port: int, 
-                         no_confirm: bool, info: bool, no_reboot: bool = False, verbose: bool = False) -> Dict[str, str]:
+def confirm_factory_reset(hosts: List[str]) -> bool:
+    """
+    Require an explicit double confirmation before factory-defaulting APs.
+
+    Factory reset erases all configuration and is irreversible, so this prompts
+    twice and lists the affected hosts. Used for both single and batch modes so
+    confirmation happens once at the operation level (not per device).
+
+    Returns:
+        bool: True only if the user confirms both prompts
+    """
+    count = len(hosts)
+    console.print(Panel(
+        f"[red]WARNING: This will FACTORY DEFAULT {count} access point"
+        f"{'s' if count != 1 else ''}.[/red]\n"
+        "All configuration will be ERASED and cannot be recovered.\n"
+        "Each AP will be reset with 'set factory' and then rebooted.",
+        title="Factory Reset Confirmation",
+        border_style="red"
+    ))
+
+    # List affected hosts (cap the printed list for large batches)
+    preview_limit = 20
+    for host in hosts[:preview_limit]:
+        console.print(f"  - {host}")
+    if count > preview_limit:
+        console.print(f"  ...and {count - preview_limit} more")
+
+    if not click.confirm("Are you sure you want to factory default these access points?"):
+        return False
+    if not click.confirm("This is irreversible. Confirm again to proceed?"):
+        return False
+    return True
+
+
+def process_single_device(host: str, username: str, password: str, port: int,
+                         no_confirm: bool, info: bool, no_reboot: bool = False, verbose: bool = False,
+                         factory_reset: bool = False) -> Dict[str, str]:
     """
     Process a single device.
     
@@ -349,6 +424,13 @@ def process_single_device(host: str, username: str, password: str, port: int,
         if no_reboot:
             result['status'] = 'Success'
             result['message'] = 'System information retrieved successfully (no reboot performed)'
+        elif factory_reset:
+            # Confirmation already handled at the operation level (see main)
+            if tool.factory_reset():
+                result['status'] = 'Success'
+                result['message'] = 'Factory reset + reboot initiated'
+            else:
+                result['message'] = 'Failed to factory reset'
         else:
             if tool.reboot(confirm=not no_confirm):
                 result['status'] = 'Success'
@@ -364,8 +446,9 @@ def process_single_device(host: str, username: str, password: str, port: int,
     return result
 
 
-def process_batch_devices(ip_addresses: List[str], username: str, password: str, 
-                         port: int, no_confirm: bool, info: bool, no_reboot: bool = False, verbose: bool = False) -> List[Dict[str, str]]:
+def process_batch_devices(ip_addresses: List[str], username: str, password: str,
+                         port: int, no_confirm: bool, info: bool, no_reboot: bool = False, verbose: bool = False,
+                         factory_reset: bool = False) -> List[Dict[str, str]]:
     """
     Process multiple devices in batch.
     
@@ -380,7 +463,7 @@ def process_batch_devices(ip_addresses: List[str], username: str, password: str,
         for i, host in enumerate(ip_addresses):
             console.print(f"\n[bold]Processing {host} ({i+1}/{len(ip_addresses)})...[/bold]")
             
-            result = process_single_device(host, username, password, port, no_confirm, info, no_reboot, verbose)
+            result = process_single_device(host, username, password, port, no_confirm, info, no_reboot, verbose, factory_reset)
             results.append(result)
             
             # Add delay between devices to avoid overwhelming the network
@@ -389,10 +472,11 @@ def process_batch_devices(ip_addresses: List[str], username: str, password: str,
     else:
         # Simple output mode
         for i, host in enumerate(ip_addresses):
-            if not info:  # Only show reboot progress if not getting system info
-                console.print(f"Rebooting {host}...", end="")
+            if not info:  # Only show progress if not getting system info
+                action = "Factory resetting" if factory_reset else "Rebooting"
+                console.print(f"{action} {host}...", end="")
             
-            result = process_single_device(host, username, password, port, no_confirm, info, no_reboot, verbose)
+            result = process_single_device(host, username, password, port, no_confirm, info, no_reboot, verbose, factory_reset)
             results.append(result)
             
             if not info:  # Only show status if not getting system info
@@ -481,8 +565,9 @@ def display_results(results: List[Dict[str, str]], verbose: bool = False, info_m
 @click.option('--no-confirm', is_flag=True, help='Skip reboot confirmation')
 @click.option('--info', is_flag=True, help='Show system information before reboot')
 @click.option('--no-reboot', is_flag=True, help='Only show system information, do not reboot')
+@click.option('--factory-reset', is_flag=True, help='Factory-default the AP (set factory) then reboot — ERASES all config')
 @click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
-def main(host, csv_file, username, password, port, no_confirm, info, no_reboot, verbose):
+def main(host, csv_file, username, password, port, no_confirm, info, no_reboot, factory_reset, verbose):
     """Ruckus Access Point Reboot Tool - Single device or batch processing"""
     
     if verbose:
@@ -498,7 +583,11 @@ def main(host, csv_file, username, password, port, no_confirm, info, no_reboot, 
     if host and csv_file:
         console.print("[red]Error: Cannot specify both --host and --csv-file[/red]")
         sys.exit(1)
-    
+
+    if factory_reset and no_reboot:
+        console.print("[red]Error: --factory-reset and --no-reboot are mutually exclusive[/red]")
+        sys.exit(1)
+
     # Get username and password if not provided
     if not username:
         username = click.prompt('SSH Username')
@@ -518,7 +607,13 @@ def main(host, csv_file, username, password, port, no_confirm, info, no_reboot, 
                     border_style="blue"
                 ))
             
-            result = process_single_device(host, username, password, port, no_confirm, info, no_reboot, verbose)
+            # Factory reset requires an explicit double confirmation up front
+            if factory_reset and not no_confirm:
+                if not confirm_factory_reset([host]):
+                    console.print("[yellow]Factory reset cancelled by user[/yellow]")
+                    sys.exit(0)
+
+            result = process_single_device(host, username, password, port, no_confirm, info, no_reboot, verbose, factory_reset)
             display_results([result], verbose, info_mode=info, no_reboot=no_reboot)
             
         else:
@@ -538,8 +633,13 @@ def main(host, csv_file, username, password, port, no_confirm, info, no_reboot, 
                 console.print("[red]No valid IP addresses found in CSV file[/red]")
                 sys.exit(1)
             
-            # Confirm batch operation (only if actually rebooting)
-            if not no_confirm and not no_reboot:
+            # Confirm batch operation (only if actually rebooting / resetting)
+            if factory_reset and not no_confirm:
+                # Stronger double confirmation for the destructive factory reset
+                if not confirm_factory_reset(ip_addresses):
+                    console.print("[yellow]Factory reset cancelled by user[/yellow]")
+                    sys.exit(0)
+            elif not no_confirm and not no_reboot:
                 if verbose:
                     console.print(Panel(
                         f"[red]WARNING: This will reboot {len(ip_addresses)} access points[/red]\n"
@@ -549,12 +649,12 @@ def main(host, csv_file, username, password, port, no_confirm, info, no_reboot, 
                     ))
                 else:
                     console.print(f"About to reboot {len(ip_addresses)} access points...")
-                
+
                 if not click.confirm("Do you want to continue?"):
                     console.print("[yellow]Batch operation cancelled by user[/yellow]")
                     sys.exit(0)
-            
-            results = process_batch_devices(ip_addresses, username, password, port, no_confirm, info, no_reboot, verbose)
+
+            results = process_batch_devices(ip_addresses, username, password, port, no_confirm, info, no_reboot, verbose, factory_reset)
             display_results(results, verbose, info_mode=info, no_reboot=no_reboot)
             
     except KeyboardInterrupt:
