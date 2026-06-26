@@ -5,7 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0] - 2025-01-XX
+## [Unreleased]
+
+### Added
+- `--factory-reset` flag: runs the Ruckus `set factory` command then reboots, so APs
+  come up at factory defaults — intended for bulk or targeted vSZ → RUCKUS One (R1)
+  migrations. Works in single-device and batch modes, is guarded by a double
+  confirmation (skippable with `--no-confirm`), and is mutually exclusive with
+  `--no-reboot`. Pairs with `--info` to capture pre-reset version/uptime.
+
+### Fixed
+- Reboot success detection: the AP replies `OK` and then closes the SSH session,
+  so a dropped connection is now treated as success instead of a failure. Also
+  drains the trailing CLI prompt after `set factory` so it no longer bleeds into
+  the following reboot command.
+
+## [1.0.0] - 2025-08-25
 
 ### Added
 - Initial release of Ruckus Reboot Tool
@@ -19,9 +34,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - System information gathering
 - Comprehensive error handling
 - Beautiful CLI interface with Rich library
-- Test connectivity script
-- Configuration management
-- Environment variable support
 
 ### Features
 - **Single Device Mode**: Reboot individual access points
@@ -37,21 +49,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cross-platform support (Linux, macOS, Windows)
 - GPL-3.0 licensed
 - Comprehensive documentation
-- Professional packaging with setup.py
 
 ### Security
 - No password logging
 - Secure credential handling
 - SSH key verification support
 - Proper connection cleanup
-
-## [Unreleased]
-
-### Planned Features
-- Support for additional Ruckus models
-- Configuration file support
-- Scheduled reboot functionality
-- Logging to file
-- Email notifications
-- Web interface
-- Docker containerization

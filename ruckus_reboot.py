@@ -135,24 +135,33 @@ class RuckusRebootTool:
         try:
             self.child.sendline(command)
             
-            # Wait for response (expect OK for reboot / set factory commands)
-            if command in ("reboot", "set factory"):
+            # 'reboot' replies OK and the AP then closes the SSH session, so a
+            # matched OK or a dropped connection both mean it is rebooting.
+            if command == "reboot":
+                i = self.child.expect(['OK', pexpect.EOF, pexpect.TIMEOUT], timeout=timeout)
+                if i in (0, 1):
+                    return True, "OK"
+                output = self.child.before.decode('utf-8', errors='ignore').strip()
+                return False, f"reboot did not start: {output}"
+
+            # 'set factory' replies "...OK" and then redraws the rkscli prompt.
+            # Match OK, then drain that trailing prompt so it can't bleed into
+            # the next command (the reboot that actually applies the reset).
+            if command == "set factory":
                 i = self.child.expect(['OK', 'rkscli:', pexpect.EOF, pexpect.TIMEOUT], timeout=timeout)
                 output = self.child.before.decode('utf-8', errors='ignore').strip()
-                
                 if i == 0:  # OK response
+                    self.child.expect(['rkscli:', pexpect.EOF, pexpect.TIMEOUT], timeout=5)
                     return True, "OK"
-                else:
-                    return False, f"'{command}' command failed: {output}"
+                return False, f"'set factory' command failed: {output}"
+
+            # For other commands, wait for the CLI prompt to return
+            i = self.child.expect(['rkscli:', pexpect.EOF, pexpect.TIMEOUT], timeout=timeout)
+            output = self.child.before.decode('utf-8', errors='ignore').strip()
+            if i == 0:  # rkscli prompt
+                return True, output
             else:
-                # For other commands, wait for CLI prompt
-                i = self.child.expect(['rkscli:', pexpect.EOF, pexpect.TIMEOUT], timeout=timeout)
-                output = self.child.before.decode('utf-8', errors='ignore').strip()
-                
-                if i == 0:  # rkscli prompt
-                    return True, output
-                else:
-                    return False, f"Command failed: {output}"
+                return False, f"Command failed: {output}"
                 
         except Exception as e:
             return False, f"Command execution error: {str(e)}"
