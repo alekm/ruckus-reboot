@@ -182,12 +182,8 @@ class RuckusRebootTool:
         
         try:
             # For Ruckus CLI, we can proceed directly with reboot
-            # The whoami command may not be available in Ruckus CLI
             logger.info(f"Initiating reboot on {self.host}...")
-            
-            # Execute reboot command
-            logger.info(f"Initiating reboot on {self.host}...")
-            
+
             if confirm:
                 console.print(Panel(
                     f"[red]WARNING: This will reboot the access point at {self.host}[/red]\n"
@@ -206,15 +202,14 @@ class RuckusRebootTool:
             ]
             
             for cmd in reboot_commands:
-                            success, output = self.execute_command(cmd, timeout=60)
-            if success:
-                logger.info(f"Reboot command '{cmd}' executed successfully on {self.host}")
-                logger.info(f"Command output: '{output}'")
-                logger.info(f"Access point {self.host} is rebooting...")
-                return True
-            else:
+                success, output = self.execute_command(cmd, timeout=60)
+                if success:
+                    logger.info(f"Reboot command '{cmd}' executed successfully on {self.host}")
+                    logger.info(f"Command output: '{output}'")
+                    logger.info(f"Access point {self.host} is rebooting...")
+                    return True
                 logger.error(f"Command '{cmd}' failed on {self.host}: {output}")
-            
+
             logger.error(f"All reboot commands failed on {self.host}")
             return False
             
